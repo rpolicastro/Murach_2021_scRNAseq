@@ -1,0 +1,40 @@
+bootstrap: docker
+From: continuumio/miniconda3
+
+%post
+
+## Allow conda to run.
+
+. /opt/conda/etc/profile.d/conda.sh
+
+## Update conda.
+
+conda update -n base -y -c defaults conda
+
+## Install required software.
+
+conda create -n seurat -y -c conda-forge -c bioconda -c defaults -c tdido \
+boost python-igraph hdf5 openmpi openblas \
+r-tidyverse r-devtools r-data.table r-seurat r-clustree r-wesanderson r-biocmanager \
+bioconductor-genomicranges bioconductor-genomicfeatures bioconductor-rtracklayer \
+bioconductor-pcamethods
+
+## Update environment.
+
+conda update -n seurat -y -c conda-forge -c bioconda --all
+
+## Clean up extra files.
+
+conda clean -y --all
+
+## Install unixtools, cerebro, seurat wrappers, and velocyto.R
+
+apt-get -y update
+apt-get -y install build-essential git-all
+
+export PATH=/opt/conda/envs/seurat/bin/:$PATH
+
+R --slave -e "Sys.setenv(TAR='/bin/tar'); install.packages('unixtools',,'http://rforge.net/')"
+R --slave -e "Sys.setenv(TAR='/bin/tar'); BiocManager::install('romanhaa/cerebroApp')"
+R --slave -e "Sys.setenv(TAR='/bin/tar'); devtools::install_github('satijalab/seurat-wrappers')"
+R --slave -e "Sys.setenv(TAR='/bin/tar'); devtools::install_github('velocyto-team/velocyto.R')"

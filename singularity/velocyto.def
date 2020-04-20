@@ -1,0 +1,37 @@
+bootstrap: docker
+From: continuumio/miniconda3
+
+%post
+
+## Install build essentials
+
+apt-get -y update
+apt-get -y install build-essential
+
+## Allow conda to run.
+
+. /opt/conda/etc/profile.d/conda.sh
+
+## Update conda.
+
+conda update -n base -y -c defaults conda
+
+## Install required software.
+
+conda create -n velocyto -y -c conda-forge -c bioconda \
+pysam samtools pandas \
+numpy scipy cython numba matplotlib scikit-learn h5py click
+
+## Update environment.
+
+conda update -n velocyto -y -c conda-forge -c bioconda --all
+
+## Clean up extra files.
+
+conda clean -y --all
+
+## Install velocyto
+
+export PATH=/opt/conda/envs/velocyto/bin/:$PATH
+
+pip install velocyto
