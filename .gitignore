@@ -1,2 +1,4 @@
-aligned/
-scrnaseq_software_velocyto_exec.sif
+/aligned/
+*.sif
+/genome/archive/
+/sequences/
