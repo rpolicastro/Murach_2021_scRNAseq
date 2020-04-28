@@ -25,3 +25,5 @@ cellranger count \
     --sample KY_mononuclear \
     --transcriptome genome/new/filtered_custom_Mus_musculus.GRCm38.99.chr \
     --expect-cells 10000
+
+mv KY_mononuclear aligned/new

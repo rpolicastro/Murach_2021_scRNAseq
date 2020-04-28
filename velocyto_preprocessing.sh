@@ -6,6 +6,8 @@ ncores=8
 ## RNA Velocity ##
 ##################
 
+cd $PBS_O_WORKDIR
+
 ## Prepare Singularity Container
 ## ----------
 
