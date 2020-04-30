@@ -128,3 +128,7 @@ p <- DimPlot(seurat_obj, group.by = "ident", pt.size = 0.1)
 pdf(file.path("results", "clustering", "clusters.pdf"), height = 5, width = 7.5)
 p
 dev.off()
+
+## Save seurat object with the dimension reduction and clusters.
+
+saveRDS(seurat_obj, file.path("results", "r_objects", "seurat_obj.RDS"))
