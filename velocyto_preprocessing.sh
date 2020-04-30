@@ -25,5 +25,5 @@ velocyto run10x \
   -@ $ncores \
   --samtools-memory 5000 \
   -m genome/new/mm10_rmsk.gtf \
-  aligned/KY_mononuclear \
+  aligned/new/KY_mononuclear \
   genome/new/filtered_custom_Mus_musculus.GRCm38.99.chr/genes/genes.gtf
