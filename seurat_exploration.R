@@ -55,7 +55,7 @@ raw_counts <- raw_counts %>%
 	as.data.table %>%
 	transpose(keep.names = "cell_id", make.names = 1)
 
-raw_counts[, tdT_Ratio := (tdTomato + 1) / (tdTomatoStop + 1)]
+raw_counts[, tdT_Log2_Ratio := log2(tdTomato + 1) - log2(tdTomatoStop + 1)]
 
 ## Grabbing cell meta data.
 
@@ -69,41 +69,48 @@ merged <- merge(meta_data, raw_counts, by = "cell_id")
 
 ## Preparing the negative control set.
 
-neg_control <- merged[orig.ident == "tdT_Parental"][, .(orig.ident, cell_id, tdT_Ratio)]
+neg_control <- merged[orig.ident == "tdT_Parental"][, .(orig.ident, cell_id, tdT_Log2_Ratio)]
 
 ## prediction interval test.
 
 exact_results <- map(unique(merged[["orig.ident"]]), function(x) {
 	pred_interval <- pmap_df(merged[orig.ident == x], function(...) {
 		row_args <- data.table(...)
-		pval <- sum(neg_control[["tdT_Ratio"]] >= row_args[["tdT_Ratio"]]) / nrow(neg_control)
+		pval <- sum(neg_control[["tdT_Log2_Ratio"]] >= row_args[["tdT_Log2_Ratio"]]) / nrow(neg_control)
 		row_args[["pval"]] <- pval
 		return(row_args)
 	})
 	pred_interval[, tdT_Ratio_FDR := p.adjust(pval, "fdr")]
-	pred_interval[, tdT_High := ifelse(tdT_Ratio_FDR < 0.05, TRUE, FALSE)]
+	pred_interval[, tdT_Ratio_Sig := ifelse(tdT_Ratio_FDR < 0.05, TRUE, FALSE)]
 	return(pred_interval)
 })
 
 exact_results <- rbindlist(exact_results)
 
+## Export results table.
+
+fwrite(
+	exact_results, file.path("results", "tdTomato", "tdT_Ratio.tsv"),
+	sep = "\t", col.names = TRUE, row.names = FALSE, quote = FALSE
+)
+
 ## Add results back to seurat object.
 
 plot_results <- exact_results[,
-	.(cell_id, tdT_Ratio, tdT_Ratio_FDR, tdT_High)
+	.(cell_id, tdT_Log2_Ratio, tdT_Ratio_FDR, tdT_Ratio_Sig)
 ][
 	order(match(cell_id, rownames(seurat_integrated@meta.data)))
 ]
 
-seurat_integrated[["tdT_Ratio"]] <- plot_results[["tdT_Ratio"]]
+seurat_integrated[["tdT_Log2_Ratio"]] <- plot_results[["tdT_Log2_Ratio"]]
 seurat_integrated[["tdT_Ratio_FDR"]] <- plot_results[["tdT_Ratio_FDR"]]
-seurat_integrated[["tdT_High"]] <- plot_results[["tdT_High"]]
+seurat_integrated[["tdT_Ratio_Sig"]] <- plot_results[["tdT_Ratio_Sig"]]
 
 ## Plot Results.
 
 p <- FeaturePlot(
 	seurat_integrated, split.by = "orig.ident", pt.size = 0.01,
-	features = c("tdT_Ratio", "tdT_Ratio_FDR", "tdT_High")
+	features = c("tdT_Log2_Ratio", "tdT_Ratio_FDR", "tdT_Ratio_Sig")
 )
 
 pdf(file.path("results", "tdTomato", "tdT_Ratio.pdf"), height = 12, width = 16)
