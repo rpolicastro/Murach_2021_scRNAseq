@@ -69,8 +69,7 @@ if (!dir.exists(file.path("results", "preprocessing"))) {
 }
 
 pdf(file.path("results", "preprocessing", "mt_content.pdf"), height = 4, width = 4)
-p
-dev.off()
+p; dev.off()
 
 ## Filter the data based on number of features and mitochondrial content.
 
@@ -127,8 +126,7 @@ if (!dir.exists(file.path("results", "clustering"))) {
 }
 
 pdf(file.path("results", "clustering", "pca_elbow_plot.pdf"), height = 5, width = 5)
-p
-dev.off()
+p; dev.off()
 
 ## Clustering the data.
 
@@ -144,8 +142,7 @@ seurat_integrated <- FindClusters(
 p <- clustree(seurat_integrated, prefix = "integrated_snn_res.")
 
 pdf(file.path("results", "clustering", "cluster_tree.pdf"), height = 16, width = 12)
-p
-dev.off()
+p; dev.off()
 
 ## Switch identity to a presumptive good clustering resolution.
 
@@ -160,11 +157,18 @@ seurat_integrated <- RunUMAP(seurat_integrated, dims = 1:35)
 
 ## Plot Clusters.
 
-p <- DimPlot(seurat_integrated, group.by = "ident", pt.size = 0.1)
+p <- DimPlot(seurat_integrated, group.by = "ident", pt.size = 0.1, label = TRUE)
 
 pdf(file.path("results", "clustering", "clusters.pdf"), height = 5, width = 7.5)
-p
-dev.off()
+p; dev.off()
+
+p <- DimPlot(
+	seurat_integrated, group.by = "ident", pt.size = 0.1,
+	split.by = "orig.ident", label = TRUE, ncol = 2
+)
+
+pdf(file.path("results", "clustering", "clusters_per_sample.pdf"), height = 10, width = 15)
+p; dev.off()
 
 ## Save seurat object with the dimension reduction and clusters.
 

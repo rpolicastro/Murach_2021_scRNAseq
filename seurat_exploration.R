@@ -10,6 +10,7 @@
 library("Seurat")
 library("tidyverse")
 library("data.table")
+library("scProportionTest")
 
 ##################################
 ## Exploring the scRNA-seq Data ##
@@ -19,6 +20,10 @@ library("data.table")
 ## ----------
 
 seurat_integrated <- readRDS(file.path("results", "r_objects", "seurat_integrated.RDS"))
+
+##########################
+## tdTomato Exploration ##
+##########################
 
 ## Exploring tdTomato
 ## ----------
@@ -116,3 +121,33 @@ p <- FeaturePlot(
 pdf(file.path("results", "tdTomato", "tdT_Ratio.pdf"), height = 12, width = 16)
 p
 dev.off()
+
+##########################
+## Cell Proportion Test ##
+##########################
+
+if (!dir.exists(file.path("results", "cell_counts"))) {
+	dir.create(file.path("results", "cell_counts"))
+}
+
+## Compare cell counts for each cluster between samples.
+
+sc_utils_obj <- sc_utils(seurat_integrated)
+
+comparisons <- list(
+        c("tdT_Parental", "KY_mononuclear"),
+        c("Pax7_tdT_4Day", "Pax7_DTA_4Day")
+)
+
+walk(comparisons, function(x) {
+        sc_utils_obj <- permutation_test(
+                sc_utils_obj, cluster_identity = "integrated_snn_res.0.5",
+                sample_1 = x[1], sample_2 = x[2]
+        )
+
+        p <- permutation_plot(sc_utils_obj, log2FD_threshold = 1)
+
+        file_name <- str_c(x[1], "_vs_", x[2], ".pdf")
+        pdf(file.path("results", "cell_counts", file_name), height = 3, width = 8)
+        print(p); dev.off()
+})
