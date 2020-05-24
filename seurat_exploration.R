@@ -35,7 +35,7 @@ if (!dir.exists(file.path("results", "tdTomato"))) {
 
 ## Plotting the expression of tdTomato and tdTomato 5' UTR.
 
-DefaultAssay(seurat_integrated) <- "RNA"
+DefaultAssay(seurat_integrated) <- "SCT"
 
 p <- FeaturePlot(
 	seurat_integrated, feature = c("tdTomato", "tdTomatoStop", "Pax7"),
@@ -51,8 +51,8 @@ dev.off()
 
 ## preparing counts.
 
-raw_counts <- seurat_integrated@assays$RNA[
-	rownames(seurat_integrated@assays$RNA) %in% c("tdTomato", "tdTomatoStop", "Pax7")
+raw_counts <- seurat_integrated@assays$SCT[
+	rownames(seurat_integrated@assays$SCT) %in% c("tdTomato", "tdTomatoStop", "Pax7")
 ]
 
 raw_counts <- raw_counts %>%
@@ -120,8 +120,7 @@ p <- FeaturePlot(
 )
 
 pdf(file.path("results", "tdTomato", "tdT_Ratio.pdf"), height = 12, width = 16)
-p
-dev.off()
+p; dev.off()
 
 ##########################
 ## Cell Proportion Test ##
