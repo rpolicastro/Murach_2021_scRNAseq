@@ -11,6 +11,7 @@ library("Seurat")
 library("tidyverse")
 library("data.table")
 library("scProportionTest")
+library("future")
 
 ##################################
 ## Exploring the scRNA-seq Data ##
@@ -151,3 +152,37 @@ walk(comparisons, function(x) {
         pdf(file.path("results", "cell_counts", file_name), height = 3, width = 8)
         print(p); dev.off()
 })
+
+#####################
+## Marker Analysis ##
+#####################
+
+options(future.globals.maxSize = 10000 * 1024 ^2)
+plan("multiprocess", workers = 4)
+
+## Find markers for all clusters.
+
+markers <- FindAllMarkers(
+	seurat_integrated, assay = "SCT", slot = "scale.data",
+	logfc.threshold = log(1.5), min.pct = 0.25, return.thresh = 0.05
+)
+
+saveRDS(markers, file.path("results", "r_objects", "markers.RDS"))
+
+## Process markers.
+
+setDT(markers)
+markers[, avg_diff := log2(exp(avg_logFC))]
+markers <- markers[p_val_adj < 0.05]
+markers <- markers[order(cluster, p_val_adj)]
+
+## Save markers.
+
+if (!dir.exists(file.path("results", "markers"))) {
+        dir.create(file.path("results", "markers"))
+}
+
+fwrite(
+	markers, file.path("results", "markers", "marker_table.tsv"),
+	sep = "\t", col.names = TRUE, row.names = FALSE, quote = FALSE
+)
