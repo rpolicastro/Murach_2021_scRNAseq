@@ -160,10 +160,13 @@ walk(comparisons, function(x) {
 options(future.globals.maxSize = 10000 * 1024 ^2)
 plan("multiprocess", workers = 4)
 
+## Find Markers
+## ----------
+
 ## Find markers for all clusters.
 
 markers <- FindAllMarkers(
-	seurat_integrated, assay = "SCT", slot = "scale.data",
+	seurat_integrated, assay = "SCT", slot = "data",
 	logfc.threshold = log(1.5), min.pct = 0.25, return.thresh = 0.05
 )
 
@@ -172,7 +175,7 @@ saveRDS(markers, file.path("results", "r_objects", "markers.RDS"))
 ## Process markers.
 
 setDT(markers)
-markers[, avg_diff := log2(exp(avg_logFC))]
+markers[, avg_log2FC := log2(exp(avg_logFC))]
 markers <- markers[p_val_adj < 0.05]
 markers <- markers[order(cluster, p_val_adj)]
 
@@ -186,3 +189,24 @@ fwrite(
 	markers, file.path("results", "markers", "marker_table.tsv"),
 	sep = "\t", col.names = TRUE, row.names = FALSE, quote = FALSE
 )
+
+## Marker Plots
+## ----------
+
+## Get top markers.
+
+top_markers <- markers[avg_log2FC >= log2(1.5)]
+top_markers <- top_markers[order(cluster, -avg_log2FC)]
+top_markers <- top_markers[, head(.SD, 5), by = cluster]
+top_markers <- top_markers[["gene"]]
+
+## Marker heatmap.
+
+p <- DoHeatmap(
+	seurat_integrated, features = top_markers, group.by = "integrated_snn_res.0.5",
+	assay = "SCT", slot = "data"
+) +
+	scale_fill_viridis_c()
+
+pdf(file.path("results", "markers", "marker_heatmap.pdf"), width = 16, height = 10)
+p; dev.off()
