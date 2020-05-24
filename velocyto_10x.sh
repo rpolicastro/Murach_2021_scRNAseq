@@ -6,7 +6,7 @@
 
 cd $PBS_O_WORKDIR
 
-module load singuality/3.5.2
+module load singularity
 
 singularity exec -eCB `pwd` -H `pwd` scrnaseq_software_velocyto_0.17.17.sif \
 velocyto run10x \
