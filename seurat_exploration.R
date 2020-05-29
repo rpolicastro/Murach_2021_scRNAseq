@@ -2,10 +2,9 @@
 ## Prepare Signularity Container
 ## singularity pull --arch amd64 library://rpolicastro/default/scrnaseq_software:seurat_velocytor_0.3
 ##
-## singularity shell -eCB "$(pwd)" -H "$(pwd)" scrnaseq_software_seurat_velocytor_0.3.sif
+## singularity shell -eCB `pwd` -H `pwd` scrnaseq_software_seurat_velocytor_0.3.sif
 ##
-## . /opt/conda/etc/profile.d/conda.sh
-## conda activate seurat; R
+## . /opt/conda/etc/profile.d/conda.sh && conda activate seurat && R
 
 library("Seurat")
 library("tidyverse")
@@ -72,6 +71,69 @@ meta_data <- as.data.table(seurat_integrated@meta.data, keep.rownames = "cell_id
 ## Merge the meta.data into the cell data.
 
 merged <- merge(meta_data, raw_counts, by = "cell_id")
+
+## PU Learning
+## Code courtesy of Daniel McDonald
+## Based on Jaskie et al., 2018 (DOI: 10.1109/IEEECONF44664.2019.9048765)
+## ----------
+
+## PU learning functions.
+
+weird_logit <- function(theta, s, x){
+  p = 1 / (1 + theta[1]^2 + exp(-(theta[2] + theta[3]*x)))
+  -mean(dbinom(s, 1, p, TRUE))
+}
+
+nontrad_class <- function(dat){
+  y = dat$tdT_Log2_Ratio
+  n = length(y)
+  s = as.numeric(dat$orig.ident =="tdT_Parental")
+  out = optim(c(1,0,0), weird_logit, method="BFGS", s=s, x=y)
+  theta = out$par
+  chat = 1 / (1+theta[1]^2)
+  ps0 = 1 / (1 + theta[1]^2 + exp(-(theta[2] + theta[3]*y)))
+  py0 = ps0 / chat
+  py0
+}
+
+## Get probability values.
+
+merged[, pvalue :=  nontrad_class(merged)]
+merged[, tdT_Ratio_Sig := pvalue < 0.05]
+merged <- merged[order(orig.ident, pvalue)]
+
+## Export the results table.
+
+fwrite(
+	merged, file.path("results", "tdTomato", "tdT_Ratio_PU_Learning.tsv"),
+	sep = "\t", col.names = TRUE, row.names = FALSE, quote = FALSE
+)
+
+## Add results back to seurat object.
+
+plot_results <- merged[,
+        .(cell_id, tdT_Log2_Ratio, pvalue, tdT_Ratio_Sig)
+][
+        order(match(cell_id, rownames(seurat_integrated@meta.data)))
+]
+
+seurat_integrated[["tdT_Log2_Ratio"]] <- plot_results[["tdT_Log2_Ratio"]]
+seurat_integrated[["pvalue"]] <- plot_results[["pvalue"]]
+seurat_integrated[["tdT_Ratio_Sig"]] <- plot_results[["tdT_Ratio_Sig"]]
+
+## Plot Results.
+
+p <- FeaturePlot(
+        seurat_integrated, split.by = "orig.ident", pt.size = 0.01,
+        features = c("tdT_Log2_Ratio", "pvalue", "tdT_Ratio_Sig")
+)
+
+pdf(file.path("results", "tdTomato", "tdT_Ratio_PU_Learning.pdf"), height = 12, width = 16)
+p; dev.off()
+
+
+## Prediction Interval Test
+## ----------
 
 ## Preparing the negative control set.
 
