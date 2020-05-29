@@ -50,15 +50,13 @@ dev.off()
 
 ## preparing counts.
 
-raw_counts <- seurat_integrated@assays$SCT[
-	rownames(seurat_integrated@assays$SCT) %in% c("tdTomato", "tdTomatoStop", "Pax7")
+raw_counts <- seurat_integrated@assays$SCT@counts[
+	rownames(seurat_integrated@assays$SCT@counts) %in% c("tdTomato", "tdTomatoStop", "Pax7"),
 ]
 
 raw_counts <- raw_counts %>%
-	as.data.frame %>%
-	rownames_to_column("cell_id") %>%
-	as.data.table %>%
-	transpose(keep.names = "cell_id", make.names = 1)
+	as.data.table(keep.rownames = "gene") %>%
+	transpose(keep.names = "cell_id", make.names = "gene")
 
 raw_counts[, tdT_Log2_Ratio := log2(tdTomato + 1) - log2(tdTomatoStop + 1)]
 

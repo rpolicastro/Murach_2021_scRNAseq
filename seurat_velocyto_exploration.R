@@ -75,11 +75,11 @@ Idents(seurat_integrated) <- "integrated_snn_res.0.5"
 
 walk(unique(seurat_integrated[["orig.ident"]][[1]]), function(sc_sample) {
 
-	test_subset <- subset(seurat_integrated, subset = orig.ident == sc_sample, downsample = 250)
+	seurat_subset <- subset(seurat_integrated, subset = orig.ident == sc_sample, downsample = 250)
 
 	seurat_velocity <- RunVelocity(
-		test_subset, ambiguous = "ambiguous", ncores = 6,
-		deltaT = 1, kCells = 25, fit.quantile = 0.02,
+		seurat_subset, ambiguous = "ambiguous", ncores = 4,
+		deltaT = 1, kCells = 25, fit.quantile = 0.05,
 		group.by = "integrated_snn_res.0.5"
 	)
 
@@ -95,7 +95,7 @@ walk(unique(seurat_integrated[["orig.ident"]][[1]]), function(sc_sample) {
 		n = 200, scale = "sqrt", cell.colors = ac(x = cell.colors, alpha = 0.5), 
 		cex = 0.8, arrow.scale = 3, show.grid.flow = TRUE,
 		min.grid.cell.mass = 0.5, grid.n = 40, arrow.lwd = 1, do.par = FALSE,
-		cell.border.alpha = 0.1, n.cores = 6
+		cell.border.alpha = 0.1, n.cores = 4
 	)
 	dev.off()
 })
