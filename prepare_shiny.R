@@ -53,8 +53,8 @@ fwrite(
 )
 
 copy_to(
-	con, counts, "counts",temporary = FALSE,
-	indexes = list("gene"), overwrite = TRUE
+	con, counts, "counts", temporary = FALSE, overwrite = TRUE,
+	indexes = list("gene_unid", "cell_unid"),
 )
 
 ## Prepare meta-data.
