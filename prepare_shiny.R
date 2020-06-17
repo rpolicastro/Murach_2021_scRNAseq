@@ -16,7 +16,7 @@ seurat_obj <- readRDS(file.path("results/r_objects/seurat_integrated.RDS"))
 
 ## Connect to SQLite Server.
 
-con <- dbConnect(SQLite(), "/N/slate/rpolicas/kevin_scRNAseq_shiny/data/murach.sqlite")
+con <- dbConnect(SQLite(), "/N/slate/rpolicas/kevin_scRNAseq_shiny/scRNAseqShiny/data/murach.sqlite")
 
 ## Prepare count data.
 
@@ -84,6 +84,26 @@ fwrite(
 copy_to(
 	con, markers, "markers", temporary = FALSE, overwrite = TRUE,
 	indexes = list("cluster", "gene")
+)
+
+## Prepare enrichment data.
+
+enriched <- list(
+	GO = "/N/project/sc_sequencing/kevin_scRNAseq/results/enrichment/go_enrichment.tsv",
+	Reactome = "/N/project/sc_sequencing/kevin_scRNAseq/results/enrichment/reactome_enrichment.tsv"
+)
+
+enriched <- map(enriched, ~fread(., sep = "\t"))
+enriched <- rbindlist(enriched, idcol = "database")
+
+fwrite(
+	enriched, "/N/slate/rpolicas/kevin_scRNAseq_shiny/scRNAseqShiny/data/enriched.csv",
+	sep = ",", col.names = TRUE, row.names = FALSE, quote = FALSE
+)
+
+copy_to(
+	con, enriched, "enriched", temporary = FALSE, overwrite = TRUE,
+	indexes = list("database", "group")
 )
 
 ## Turn of db connection.
