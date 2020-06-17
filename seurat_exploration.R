@@ -269,3 +269,69 @@ p <- DoHeatmap(
 
 pdf(file.path("results", "markers", "marker_heatmap.pdf"), width = 16, height = 10)
 p; dev.off()
+
+#####################
+## Term Enrihcment ##
+#####################
+
+library("clusterProfiler")
+library("ReactomePA")
+library("org.Mm.eg.db")
+
+if (!dir.exists(file.path("results", "enrichment"))) {
+	dir.create(file.path("results", "enrichment"))
+}
+
+## Load up the markers and prepare for analysis.
+
+markers <- fread(file.path("results", "markers", "marker_table.tsv"), sep = "\t")
+
+markers[, change := fifelse(avg_log2FC > 0, "up", "down")]
+markers[,
+	group := str_c("cluster", cluster, change, sep = "_"),
+	by = seq_len(nrow(markers))
+]
+
+markers <- split(markers, markers[["group"]])
+
+## GO analysis.
+
+go_enrichment <- map(markers, function(x) {
+	enriched <- enrichGO(
+		gene = x[["gene"]], OrgDb = "org.Mm.eg.db",
+		keyType = "SYMBOL", ont = "BP"
+	)
+	enriched <- as.data.table(enriched)
+	enriched <- enriched[p.adjust < 0.05]
+	return(enriched)
+})
+
+go_enrichment <- rbindlist(go_enrichment, idcol = "group")
+
+fwrite(
+	go_enrichment, file.path("results", "enrichment", "go_enrichment.tsv"),
+	sep = "\t", col.names = TRUE, row.names = FALSE, quote = FALSE
+)
+
+## Reactome analysis.
+
+reactome_enrichment <- map(markers, function(x) {
+	entrez <- bitr(
+		x[["gene"]], fromType = "SYMBOL", toType = "ENTREZID",
+		OrgDb = "org.Mm.eg.db"
+	)
+	entrez <- entrez[["ENTREZID"]]
+
+	enriched <- enrichPathway(gene = entrez, organism = "mouse", readable = TRUE)
+
+	enriched <- as.data.table(enriched)
+	enriched <- enriched[p.adjust < 0.05]
+	return(enriched)
+})
+
+reactome_enrichment <- rbindlist(reactome_enrichment, idcol = "group")
+
+fwrite(
+        reactome_enrichment, file.path("results", "enrichment", "reactome_enrichment.tsv"),
+        sep = "\t", col.names = TRUE, row.names = FALSE, quote = FALSE
+)
