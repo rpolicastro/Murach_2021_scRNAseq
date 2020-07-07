@@ -1,5 +1,5 @@
 
-## Prepare Signularity Container
+## Prepare Singularity Container
 ## singularity pull --arch amd64 library://rpolicastro/default/scrnaseq_software:seurat_velocytor_0.3
 ##
 ## singularity shell -eCB `pwd` -H `pwd` scrnaseq_software_seurat_velocytor_0.3.sif
@@ -9,17 +9,17 @@
 
 library("Seurat")
 library("tidyverse")
+library("data.table")
 library("clustree")
 library("future")
 library("unixtools")
-library("cerebroApp")
 
 #####################
 ## Kevin scRNA-seq ##
 #####################
 
 options(future.globals.maxSize = 10000 * 1024 ^2)
-plan("multiprocess", workers = 2)
+plan("multiprocess", workers = 4)
 
 ## Prepare Counts
 ## ----------
@@ -38,8 +38,7 @@ counts_10X <- map(sample_files, Read10X)
 ## Create seurat object.
 
 seurat_obj <- imap(counts_10X, function(x, y) {
-	x <- CreateSeuratObject(counts = x, project = y, min.cells = 10, min.features = 250)
-	return(x)
+  CreateSeuratObject(counts = x, project = y, min.cells = 10, min.features = 250)
 })
 
 ## Cell Quality Control
@@ -48,24 +47,23 @@ seurat_obj <- imap(counts_10X, function(x, y) {
 ## Add mitochondrial percentage.
 
 seurat_obj <- map(seurat_obj, function(x) {
-	x[["percent.mt"]] <- PercentageFeatureSet(x, "^mt-")
-	return(x)
+  x[["percent.mt"]] <- PercentageFeatureSet(x, "^mt-")
+  return(x)
 })
 
 ## Plot mitochondrial percentage versus feature counts.
 
 mt_data <- map(seurat_obj, function(x) {
-	x <- as_tibble(x@meta.data, .name_repair = "unique")
-	return(x)
-}) %>%
-	bind_rows(.id = "sample")
+  as.data.table(x[[]], keep.rownames = "cell_id")
+})
+mt_data <- rbindlist(mt_data, idcol = "sample")
 
 p <- ggplot(mt_data, aes(x = percent.mt, y = nFeature_RNA)) +
-	geom_point(size = 0.1) +
-	facet_wrap(~ sample, ncol = 2)
+  geom_point(size = 0.1) +
+  facet_wrap(~ sample, ncol = 2)
 
 if (!dir.exists(file.path("results", "preprocessing"))) {
-	dir.create(file.path("results", "preprocessing"), recursive = TRUE)
+  dir.create(file.path("results", "preprocessing"), recursive = TRUE)
 }
 
 pdf(file.path("results", "preprocessing", "mt_content.pdf"), height = 4, width = 4)
@@ -73,15 +71,15 @@ p; dev.off()
 
 ## Filter the data based on number of features and mitochondrial content.
 
-seurat_obj <- map(seurat_obj, function(x) {
-	x <- subset(x, subset = percent.mt <= 25 & nFeature_RNA >= 750)
-	return(x)
-})
+seurat_obj <- map(
+  seurat_obj, subset,
+  subset = percent.mt <= 25 & nFeature_RNA >= 750
+)
 
 ## Save the seurat object after cell quality control.
 
 if (!dir.exists(file.path("results", "r_objects"))) {
-	dir.create(file.path("results", "r_objects"))
+  dir.create(file.path("results", "r_objects"))
 }
 
 saveRDS(seurat_obj, file.path("results", "r_objects", "seurat_obj.RDS"))
@@ -95,18 +93,33 @@ seurat_obj <- map(seurat_obj, SCTransform)
 
 ## Prepare for integration.
 
-integration_features <- SelectIntegrationFeatures(seurat_obj, nfeatures = 3000)
-seurat_obj <- PrepSCTIntegration(seurat_obj, anchor.features = integration_features)
+seurat_obj <- list(
+  "tdT_Expression" = list(
+    "tdT_Parental" = seurat_obj[["tdT_Parental"]],
+    "tdT_Expressed" = seurat_obj[["KY_mononuclear"]]
+  ),
+  "tdT_4Day" = list(
+    "Pax7_tdT_4Day" = seurat_obj[["Pax7_tdT_4Day"]],
+    "Pax7_DTA_4Day" = seurat_obj[["Pax7_DTA_4Day"]]
+ )  
+)
+
+integration_features <- map(seurat_obj, SelectIntegrationFeatures, nfeatures = 3000)
+seurat_obj <- map2(seurat_obj, integration_features, function(x, y) {
+  PrepSCTIntegration(x, anchor.features = y)
+})
 
 ## Integrate the reference dataset.
 
-reference_datasets <- which(names(seurat_obj) == "tdT_Parental")
-integration_anchors <- FindIntegrationAnchors(
-	seurat_obj, normalization.method = "SCT", anchor.features = integration_features,
-	reference = reference_datasets
-)
+integration_anchors <- map2(seurat_obj, integration_features, function(x, y) {
+  anchors <- FindIntegrationAnchors(
+    x, normalization.method = "SCT", anchor.features = y,
+    reference = which(names(x) %in% c("tdT_Parental", "Pax7_tdT_4Day"))
+  )
+  return(anchors)
+})
 
-seurat_integrated <- IntegrateData(integration_anchors, normalization.method = "SCT")
+seurat_integrated <- map(integration_anchors, IntegrateData, normalization.method = "SCT")
 
 saveRDS(seurat_integrated, file.path("results", "r_objects", "seurat_integrated.RDS"))
 
@@ -115,60 +128,77 @@ saveRDS(seurat_integrated, file.path("results", "r_objects", "seurat_integrated.
 
 ## PCA dimension reduction for clustering.
 
-seurat_integrated <- RunPCA(seurat_integrated, npcs = 100)
+seurat_integrated <- map(seurat_integrated, RunPCA, npcs = 100)
 
 ## Elbow plot to explore PCA dimensions.
 
-p <- ElbowPlot(seurat_integrated, ndims = 100)
-
 if (!dir.exists(file.path("results", "clustering"))) {
-	dir.create(file.path("results", "clustering"))
+  dir.create(file.path("results", "clustering"))
 }
 
 pdf(file.path("results", "clustering", "pca_elbow_plot.pdf"), height = 5, width = 5)
-p; dev.off()
+ imap(seurat_integrated, function(x, y) {
+    ElbowPlot(x, ndims = 100) + ggtitle(y)
+  })
+dev.off()
 
 ## Clustering the data.
 
-seurat_integrated <- FindNeighbors(seurat_integrated, dims = 1:35)
+seurat_integrated <- map(seurat_integrated, FindNeighbors, dims = 1:30)
 
-seurat_integrated <- FindClusters(
-	seurat_integrated, resolution = seq(0.2, 1.2, 0.1),
-	algorithm = 4, method = "igraph", weights = TRUE
+seurat_integrated <- map(
+  seurat_integrated, FindClusters,
+  resolution = seq(0.2, 1.0, 0.1),
+  algorithm = 4, method = "igraph", weights = TRUE
 )
+
+saveRDS(seurat_integrated, file.path("results", "r_objects", "seurat_integrated.RDS"))
 
 ## Plotting a cluster tree.
 
-p <- clustree(seurat_integrated, prefix = "integrated_snn_res.")
-
 pdf(file.path("results", "clustering", "cluster_tree.pdf"), height = 16, width = 12)
-p; dev.off()
+  imap(seurat_integrated, function(x, y) {
+    clustree(x, prefix = "integrated_snn_res.") + ggtitle(y)
+  })
+dev.off()
 
 ## Switch identity to a presumptive good clustering resolution.
 
-Idents(seurat_integrated) <- "integrated_snn_res.0.5"
+seurat_integrated <- imap(seurat_integrated, function(x, y) {
+  if (y == "tdT_Expression") {
+    Idents(x) <- "integrated_snn_res.0.5"
+    x$seurat_clusters <- x$integrated_snn_res.0.5
+  } else {
+    Idents(x) <- "integrated_snn_res.0.4"
+    x$seurat_clusters <- x$integrated_snn_res.0.4
+  }
+  return(x)
+})
 
 ## UMAP dimension reduction for visualization.
 
 if (!dir.exists("tempdir")) dir.create("tempdir")
 set.tempdir("tempdir")
 
-seurat_integrated <- RunUMAP(seurat_integrated, dims = 1:35)
+seurat_integrated <- map(seurat_integrated, RunUMAP, dims = 1:30)
 
 ## Plot Clusters.
 
-p <- DimPlot(seurat_integrated, group.by = "ident", pt.size = 0.1, label = TRUE)
-
 pdf(file.path("results", "clustering", "clusters.pdf"), height = 5, width = 7.5)
-p; dev.off()
+  imap(seurat_integrated, function(x, y) {
+    DimPlot(x, group.by = "ident", pt.size = 0.1, label = TRUE) + ggtitle(y)
+  })
+dev.off()
 
-p <- DimPlot(
-	seurat_integrated, group.by = "ident", pt.size = 0.1,
+pdf(file.path("results", "clustering", "clusters_per_sample.pdf"), height = 6, width = 12)
+  imap(seurat_integrated, function(x, y) {
+    DimPlot(
+	x, group.by = "ident", pt.size = 0.1,
 	split.by = "orig.ident", label = TRUE, ncol = 2
-)
-
-pdf(file.path("results", "clustering", "clusters_per_sample.pdf"), height = 10, width = 15)
-p; dev.off()
+    ) +
+    ggtitle(y)
+  })
+dev.off()
 
 ## Save seurat object with the dimension reduction and clusters.
 

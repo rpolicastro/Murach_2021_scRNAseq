@@ -66,40 +66,59 @@ fwrite(
 ##################
 
 if (!dir.exists(file.path("results", "rna_velocity"))) {
-        dir.create(file.path("results", "rna_velocity"), recursive = TRUE)
+  dir.create(file.path("results", "rna_velocity"), recursive = TRUE)
 }
+
+## separate the samples.
+
+seurat_subset <- list(
+  "tdT_Parental" = subset(
+    seurat_integrated[[1]], subset = orig.ident == "tdT_Parental",
+    downsample = 200
+  ),
+  "KY_Mononuclear" = subset(
+    seurat_integrated[[1]], subset = orig.ident == "KY_Mononuclear",
+    downsample = 200
+  ),
+  "Pax7_tdT_4day" = subset(
+    seurat_integrated[[2]], subset = orig.ident == "Pax7_tdT_4day",
+    downsample = 200
+  ),
+  "Pax7_DTA_4day" = subset(
+    seurat_integrated[[2]], subset = orig.ident == "Pax7_DTA_4day",
+    downsample = 200
+  )
+)
 
 ## Run RNA velocity.
 
-Idents(seurat_integrated) <- "integrated_snn_res.0.5"
-
-seurat_velocity <- RunVelocity(
-	seurat_integrated, ambiguous = "ambiguous", ncores = 1,
-	deltaT = 1, kCells = 25, fit.quantile = 0.02,
-	group.by = "integrated_snn_res.0.5"
+seurat_velocity <- map(
+  seurat_subset, RunVelocity,
+  ambiguous = "ambiguous", ncores = 4,
+  deltaT = 1, kCells = 25, fit.quantile = 0.02,
+  group.by = "seurat_clusters"
 )
 
 saveRDS(seurat_velocity, file.path("results", "r_objects", "seurat_velocity.RDS"))
 
 ## Velocity plots.
 
-walk(unique(seurat_integrated[["orig.ident"]][[1]]), function(sc_sample) {
+iwalk(seurat_velocity, function(expr, y) {
+    
+  ident.colors <- (scales::hue_pal())(n = length(levels(expr)))
+  names(ident.colors) <- levels(expr)
+  cell.colors <- ident.colors[Idents(expr)]
+  names(cell.colors) <- colnames(expr)
 
-	seurat_subset <- subset(seurat_velocity, subset = orig.ident == sc_sample, downsample = 200)
+  pdf(file.path("results", "rna_velocity", str_c(y, "_velocity.pdf")), height = 8, width = 8)
+  show.velocity.on.embedding.cor(
+    emb = Embeddings(expr, reduction = "umap"),
+    vel = Tool(expr, slot = ".f"),
+    n = 750, scale = "sqrt", cell.colors = ac(x = cell.colors, alpha = 0.5), 
+    cex = 0.8, arrow.scale = 3, show.grid.flow = TRUE,
+    min.grid.cell.mass = 0.5, grid.n = 40, arrow.lwd = 1, do.par = FALSE,
+    cell.border.alpha = 0.1, n.cores = 4
+  )
+  dev.off()
 
-	ident.colors <- (scales::hue_pal())(n = length(x = levels(x = seurat_subset)))
-	names(x = ident.colors) <- levels(x = seurat_subset)
-	cell.colors <- ident.colors[Idents(object = seurat_subset)]
-	names(x = cell.colors) <- colnames(x = seurat_subset)
-
-	pdf(file.path("results", "rna_velocity", str_c(sc_sample, "_velocity.pdf")), height = 8, width = 8)
-	show.velocity.on.embedding.cor(
-		emb = Embeddings(object = seurat_subset, reduction = "umap"),
-		vel = Tool(object = seurat_subset, slot = "RunVelocity"),
-		n = 200, scale = "sqrt", cell.colors = ac(x = cell.colors, alpha = 0.5), 
-		cex = 0.8, arrow.scale = 3, show.grid.flow = TRUE,
-		min.grid.cell.mass = 0.5, grid.n = 40, arrow.lwd = 1, do.par = FALSE,
-		cell.border.alpha = 0.1, n.cores = 6
-	)
-	dev.off()
 })
