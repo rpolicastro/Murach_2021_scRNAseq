@@ -3,11 +3,7 @@ library("tidyverse")
 library("Seurat")
 library("slingshot")
 library("tradeSeq")
-library("tidymodels")
-library("ranger")
-library("janitor")
 library("patchwork")
-library("gam")
 library("data.table")
 
 #########################
@@ -278,149 +274,6 @@ ggsave(
   dpi = 300, height = 18, width = 12
 )
 
-###################
-## Random Forest ##
-###################
-
-## Get Counts.
-
-gene_counts <- map(seurat_obj, function(x) {
-  x <- GetAssayData(x, assay = "SCT", slot = "data")
-  x <- as.data.table(t(as.matrix(x)), keep.rownames = "cell_id")
-  return(x)
-})
-
-## Merge with pseudotimes.
-
-lineages <- map(pseudotime, as.data.table, keep.rownames = "cell_id")
-
-gene_counts <- map2(gene_counts, lineages, merge, by = "cell_id")
-gene_counts <- map(gene_counts, clean_names)
-
-## Split the data for curve1.
-
-split_data <- map(gene_counts, function(x) {
-  x <- x[!is.na(curve1)]
-  x <- initial_split(x)
-  x <- list(
-    training = training(x),
-    testing = testing(x)
-  )
-  return(x)
-})
-
-## Make the model.
-
-models <- map(split_data, function(x) {
-
-  x <- x[["training"]]
-
-  remove_cols <- keep(colnames(x), ~str_detect(.x, "^curve|cell_id"))
-
-  rf_formula <- as.formula(str_c(
-    "curve1 ~ . - ", str_c(remove_cols, collapse = " - "),
-    sep = " "
-  ))
-
-  model <- rand_forest(mtry = 200, trees = 1400, min_n = 15, mode = "regression") %>%
-    set_engine("ranger", importance = "impurity", num.threads = 8) %>%
-    fit(rf_formula, data = x)
-
-  return(model)
-
-})
-
-##############
-## GAM Gene ##
-##############
-
-## Gene counts.
-
-gene_counts <- map(seurat_obj, function(x) {
-  x <- GetAssayData(x, assay = "SCT", slot = "data")
-  x <- as.data.table(t(as.matrix(x)), keep.rownames = "cell_id")
-  return(x)
-})
-
-og_names <- map(gene_counts, function(x) {
-  x <- data.table(original = colnames(x))
-  return(x)
-})
-
-gene_counts <- map(gene_counts, clean_names)
-
-og_names <- map2(og_names, gene_counts, function(x, y) {
-  x[["gene"]] <- colnames(y)
-  return(x)
-})
-
-## Pseudotimes.
-
-lineages <- map(pseudotime, as.data.table, keep.rownames = "cell_id")
-
-## Combine required data.
-
-model_data <- imap(gene_counts, function(x, y) {
-  genes <- keep(colnames(x), ~!str_detect(., "cell_id"))
-
-  x <- merge(x, lineages[[y]], by = "cell_id")
-  x <- merge(x, metadata[[y]], by = "cell_id")
-
-  data_list <- list(
-    counts = x, genes = genes,
-    lineages = keep(colnames(x), ~str_detect(., "curve\\d+$"))
-  )
-  return(data_list)
-})
-
-## Run the models.
-
-model_results <- map(model_data, function(x) {
-
-  count_data <- x[["counts"]][!is.na(curve1)]
-
-  pvals <- map(x[["genes"]], function(y) {
-    model_formula <- as.formula(str_c(y, "~ lo(curve1)", sep = " "))
-    model <- gam(model_formula, data = count_data)
-    pval <- summary(model)$anova$`Pr(F)`[2]
-    return(data.table(pvalue = pval, gene = y))
-  })
-
-  pvals <- rbindlist(pvals)
-  return(pvals)
-
-})
-
-model_results <- map2(model_results, og_names, function(x, y) {
-  x <- merge(x, y, by = "gene")
-  x[, gene := NULL]
-  setnames(x, old = "original", new = "gene")
-  return(x)
-})
-
-## Correct for multiple comparisons.
-
-model_results <- map(model_results, function(x) {
-  x <- x[, .(gene, pvalue, FDR = p.adjust(pvalue, "fdr"))]
-  return(x)
-})
-
-################################
-
-Y <- log1p(assays(sim)$norm)
-var100 <- names(sort(apply(Y,1,var),decreasing = TRUE))[1:100]
-Y <- Y[var100,]
-
-# fit a GAM with a loess term for pseudotime
-gam.pval <- apply(Y,1,function(z){
-    d <- data.frame(z=z, t=t)
-    suppressWarnings({
-      tmp <- suppressWarnings(gam(z ~ lo(t), data=d))
-    })
-    p <- summary(tmp)[3][[1]][2,3]
-    p
-})
-
 ##############
 ## tradeSeq ##
 ##############
@@ -440,10 +293,6 @@ dev.off()
 
 saveRDS(knots, file.path("results", "r_objects", "knots.RDS"))
 
-## Calculate cell weights.
-
-cell_weights <- map(trajectory, slingCurveWeights)
-
 ## Fit the negative binomial model.
 
 BPPARAM <- BiocParallel::bpparam()
@@ -457,3 +306,14 @@ nb_model <- map2(seurat_obj, trajectory, function(x, y) {
   )
   return(nbm)
 })
+
+nb_model <- map2(seurat_obj[1], trajectory[1], function(x, y) {
+  nbm <- fitGAM(
+    counts = as.matrix(x[["RNA"]]@counts), sds = y,
+    conditions = factor(x$orig.ident), nknots = 6,
+    genes = seq_len(10), sce = TRUE,
+    parallel = TRUE, BPPARAM = BPPARAM
+  )
+  return(nbm)
+})
+
