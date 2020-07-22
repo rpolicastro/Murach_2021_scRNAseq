@@ -50,28 +50,33 @@ dev.off()
 
 ## preparing counts.
 
-raw_counts <- seurat_integrated@assays$SCT@counts[
-	rownames(seurat_integrated@assays$SCT@counts) %in% c("tdTomato", "tdTomatoStop", "Pax7"),
-]
-
-raw_counts <- raw_counts %>%
-	as.data.table(keep.rownames = "gene") %>%
-	transpose(keep.names = "cell_id", make.names = "gene")
-
-raw_counts[, tdT_Log2_Ratio := log2(tdTomato + 1) - log2(tdTomatoStop + 1)]
+raw_counts <- map(seurat_integrated, function(x) {
+  x <- x[["SCT"]]@counts
+  counts <- as.data.table(t(as.matrix(x)), keep.rownames = "cell_id")
+  counts <- counts[, .(cell_id, tdTomato, tdTomatoStop)]
+  counts[, tdT_Log2_Ratio := log2(tdTomato + 1) - log2(tdTomatoStop + 1)]
+  return(counts)
+})
 
 ## Grabbing cell meta data.
 
-meta_data <- as.data.table(seurat_integrated@meta.data, keep.rownames = "cell_id")[,
-	.(orig.ident, cell_id)
-]
+meta_data <- map(seurat_integrated, function(x) {
+  metadata <- as.data.table(x[[]], keep.rownames = "cell_id")
+  metadata <- metadata[, .(cell_id, orig.ident)]
+  return(metadata)
+})
 
 ## Merge the meta.data into the cell data.
 
-merged <- merge(meta_data, raw_counts, by = "cell_id")
+merged <- map2(raw_counts, meta_data, function(x, y) {
+  merged <- merge(y, x, by = "cell_id")
+  return(merged)
+})
+
+merged <- rbindlist(merged, idcol = "experiment")
 
 ## PU Learning
-## Code courtesy of Daniel McDonald
+## Code courtesy of Professor Daniel McDonald
 ## Based on Jaskie et al., 2018 (DOI: 10.1109/IEEECONF44664.2019.9048765)
 ## ----------
 
@@ -96,9 +101,12 @@ nontrad_class <- function(dat){
 
 ## Get probability values.
 
-merged[, pvalue :=  nontrad_class(merged)]
-merged[, tdT_Ratio_Sig := pvalue < 0.05]
-merged <- merged[order(orig.ident, pvalue)]
+merged[, PU_learning_pvalue :=  nontrad_class(merged)]
+merged[,
+  PU_learning_FDR := p.adjust(PU_learning_pvalue, "fdr"),
+  by = orig.ident
+]
+
 
 ## Export the results table.
 
@@ -106,29 +114,6 @@ fwrite(
 	merged, file.path("results", "tdTomato", "tdT_Ratio_PU_Learning.tsv"),
 	sep = "\t", col.names = TRUE, row.names = FALSE, quote = FALSE
 )
-
-## Add results back to seurat object.
-
-plot_results <- merged[,
-        .(cell_id, tdT_Log2_Ratio, pvalue, tdT_Ratio_Sig)
-][
-        order(match(cell_id, rownames(seurat_integrated@meta.data)))
-]
-
-seurat_integrated[["tdT_Log2_Ratio"]] <- plot_results[["tdT_Log2_Ratio"]]
-seurat_integrated[["pvalue"]] <- plot_results[["pvalue"]]
-seurat_integrated[["tdT_Ratio_Sig"]] <- plot_results[["tdT_Ratio_Sig"]]
-
-## Plot Results.
-
-p <- FeaturePlot(
-        seurat_integrated, split.by = "orig.ident", pt.size = 0.01,
-        features = c("tdT_Log2_Ratio", "pvalue", "tdT_Ratio_Sig")
-)
-
-pdf(file.path("results", "tdTomato", "tdT_Ratio_PU_Learning.pdf"), height = 12, width = 16)
-p; dev.off()
-
 
 ## Prediction Interval Test
 ## ----------
@@ -143,15 +128,14 @@ exact_results <- map(unique(merged[["orig.ident"]]), function(x) {
 	pred_interval <- pmap_df(merged[orig.ident == x], function(...) {
 		row_args <- data.table(...)
 		pval <- sum(neg_control[["tdT_Log2_Ratio"]] >= row_args[["tdT_Log2_Ratio"]]) / nrow(neg_control)
-		row_args[["pval"]] <- pval
+		row_args[["Pred_interval_pvalue"]] <- pval
 		return(row_args)
 	})
-	pred_interval[, tdT_Ratio_FDR := p.adjust(pval, "fdr")]
-	pred_interval[, tdT_Ratio_Sig := ifelse(tdT_Ratio_FDR < 0.05, TRUE, FALSE)]
+	pred_interval[, Pred_interval_FDR := p.adjust(Pred_interval_pvalue, "fdr")]
 	return(pred_interval)
 })
 
-exact_results <- rbindlist(exact_results)
+merged <- rbindlist(exact_results)
 
 ## Export results table.
 
@@ -161,26 +145,44 @@ fwrite(
 )
 
 ## Add results back to seurat object.
+## ----------
 
-plot_results <- exact_results[,
-	.(cell_id, tdT_Log2_Ratio, tdT_Ratio_FDR, tdT_Ratio_Sig)
-][
-	order(match(cell_id, rownames(seurat_integrated@meta.data)))
+## Prepare data.
+
+merged[,
+  c("PU_learning_sig", "Pred_interval_sig") := list(
+    PU_learning_FDR < 0.05, Pred_interval_FDR < 0.05
+  )
 ]
 
-seurat_integrated[["tdT_Log2_Ratio"]] <- plot_results[["tdT_Log2_Ratio"]]
-seurat_integrated[["tdT_Ratio_FDR"]] <- plot_results[["tdT_Ratio_FDR"]]
-seurat_integrated[["tdT_Ratio_Sig"]] <- plot_results[["tdT_Ratio_Sig"]]
+merged <- split(merged, by = "experiment", keep.by = FALSE)
 
-## Plot Results.
+row_order <- map2(merged, seurat_integrated, function(x, y) {
+  x <- x[,
+    .(cell_id, tdT_Log2_Ratio, PU_learning_pvalue, PU_learning_FDR,
+    PU_learning_sig, Pred_interval_pvalue, Pred_interval_FDR,
+    Pred_interval_sig
+    )
+  ][order(match(cell_id, rownames(y@meta.data)))]
+  x[, cell_id := NULL]
+  return(x)
+})
 
-p <- FeaturePlot(
-	seurat_integrated, split.by = "orig.ident", pt.size = 0.01,
-	features = c("tdT_Log2_Ratio", "tdT_Ratio_FDR", "tdT_Ratio_Sig")
+seurat_integrated[[1]][[]] <- cbind(
+  seurat_integrated[[1]][[]],
+  row_order[[1]]
 )
 
-pdf(file.path("results", "tdTomato", "tdT_Ratio.pdf"), height = 12, width = 16)
-p; dev.off()
+## Add test info back into seurat object.
+
+seurat_integrated <- map2(seurat_integrated, row_order, function(x, y) {
+  x@meta.data <- cbind(x[[]], y)
+  return(x)
+})
+
+## Save expanded seurat object.
+
+saveRDS(seurat_integrated, file.path("results", "r_objects", "seurat_expanded.RDS"))
 
 ##########################
 ## Cell Proportion Test ##

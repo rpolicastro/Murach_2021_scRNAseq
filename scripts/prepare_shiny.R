@@ -10,17 +10,59 @@ library("Seurat")
 ## Prepare Data for Shiny ##
 ############################
 
+## Load Seurat Objects
+## ----------
+
 ## Load seurat object.
 
-seurat_obj <- readRDS(file.path("results/r_objects/seurat_integrated.RDS"))
+seurat_obj <- readRDS(file.path("results/r_objects/seurat_expanded.RDS"))
+seurat_velocity <- readRDS(file.path("results/r_objects/seurat_integrated_spliced.RDS"))
 
-## Connect to SQLite Server.
+## Annotate clusters.
 
-con <- dbConnect(SQLite(), "/N/slate/rpolicas/kevin_scRNAseq_shiny/scRNAseqShiny/data/murach.sqlite")
+seurat_obj$tdT_Expression$seurat_clusters <- seurat_obj$tdT_Expression$integrated_snn_res.0.5
+seurat_obj$tdT_4Day$seurat_clusters <- seurat_obj$tdT_4Day$integrated_snn_res.0.4 %>% {case_when(
+    . == 1 ~ "M2 Macrophages",
+    . == 2 ~ "Neutrophils",
+    . == 3 ~ "Neutrophils",
+    . == 4 ~ "Myeloid",
+    . == 5 ~ "FAPs",
+    . == 6 ~ "Myeloid",
+    . == 7 ~ "T Cells",
+    . == 8 ~ "Dead/Dying",
+    . == 9 ~ "Endothelial",
+    . == 10 ~ "Myonuclei",
+    . == 11 ~ "FAPs",
+    . == 12 ~ "NK Cells",
+    . == 13 ~ "Monocytes",
+    . == 14 ~ "Myeloid",
+    . == 15 ~ "Fibrogenic",
+    . == 16 ~ "Pericytes"
+)}
 
-## Prepare count data.
+seurat_velocity$tdT_4Day$seurat_clusters <- seurat_velocity$tdT_4Day$integrated_snn_res.0.4
+seurat_velocity$tdT_Expression$seurat_clusters <- seurat_velocity$tdT_Expression$integrated_snn_res.0.5
 
-iwalk(seurat_obj, function(x, y) {
+## Make list of samples.
+
+seu <- list(
+  tdT_14Day_Normal = seurat_obj[["tdT_Expression"]],
+  tdT_4Day_Normal = seurat_obj[["tdT_4Day"]],
+  tdT_14Day_Spliced = seurat_velocity[["tdT_Expression"]],
+  tdT_4Day_Spliced = seurat_velocity[["tdT_4Day"]]
+)
+
+## Connect to SQLite Server
+## ----------
+
+con <- dbConnect(SQLite(), "shiny_app/murach.sqlite")
+
+## Prepare Gene Counts
+## ----------
+
+## Extract counts.
+
+counts <- imap(seu, function(x, y) {
   counts <- x[["SCT"]]@counts
   counts <- as.data.table(t(as.matrix(counts)), keep.rownames = "cell_id")
 
@@ -29,63 +71,175 @@ iwalk(seurat_obj, function(x, y) {
     value.name = "exp"
   )
 
+  return(counts)
+})
+
+## Save to database.
+
+iwalk(counts, function(x, y) {
   copy_to(
-    con, counts, str_c(y, "_counts"), temporary = FALSE, overwrite = TRUE,
+    con, x, str_c(y, "_counts"), temporary = FALSE, overwrite = TRUE,
     indexes = list("gene")
   )
 })
 
-## Prepare meta-data.
+## Prepare Meta-Data.
+## ----------
 
-iwalk(seurat_obj, function(x, y) {
+metadata <- imap(seu, function(x, y) {
   meta_data <- as.data.table(x[[]], keep.rownames = "cell_id")
+  return(meta_data)
+})
 
+## Save to database.
+
+iwalk(metadata, function(x, y) {
   copy_to(
-    con, meta_data, str_c(y, "_metadata"), temporary = FALSE, overwrite = TRUE,
+    con, x, str_c(y, "_metadata"), temporary = FALSE, overwrite = TRUE,
     indexes = list("seurat_clusters", "orig.ident")
   )
 })
 
-## Prepare UMAP.
+## Prepare UMAP
+## ----------
 
-iwalk(seurat_obj, function(x, y) {
+reductions <- map(seu, function(x) {
   reductions <- as.data.table(
     Embeddings(x, "umap"), keep.rownames = "cell_id",
     key = "cell_id"
   )
 
-  copy_to(
-    con, reductions, str_c(y, "_reductions"), temporary = FALSE, overwrite = TRUE
-  )
+  return(reductions)
 })
 
-## Markers.
+## Save to database.
 
-markers <- fread(file.path("results", "markers", "marker_table.tsv"))
-markers <- split(markers, by = "experiment", keep.by = FALSE)
+iwalk(reductions, function(x, y) {
+  copy_to(con, x, str_c(y, "_reductions"), temporary = FALSE, overwrite = TRUE)
+})
 
-iwalk(markers, function(x, y) {
-  markers <- x[,
+## Prepare Markers.
+## ----------
+
+library("future")
+
+options(future.globals.maxSize = 10000 * 1024 ^2)
+plan("multiprocess", workers = 4)
+
+## Find markers.
+
+markers <- imap(seu, function(x, y) {
+
+  Idents(x) <- "seurat_clusters"
+  markers <- FindAllMarkers(
+    x, assay = "SCT", slot = "data", logfc.threshold = log(1.5),
+    min.pct = 0.25, return.thresh = 0.05
+  )
+
+  setDT(markers)
+  markers[, avg_log2FC := log2(exp(avg_logFC))]
+  markers <- markers[p_val_adj < 0.05]
+  markers <- markers[order(cluster, p_val_adj)]
+  markers <- markers[,
     .(cluster, gene, pct.1, pct.2, p_val,
     p_val_adj, avg_logFC, avg_log2FC)
   ]
 
+  return(markers)
+})
+
+## Write out file.
+
+if (!dir.exists("shiny_app")) dir.create("shiny_app")
+
+fwrite(
+  rbindlist(markers, idcol = "experiment"),
+  file.path("shiny_app", "markers.tsv"),
+  sep = "\t", col.names = TRUE, row.names = FALSE, quote = FALSE
+)
+
+## Save to database.
+
+iwalk(markers, function(x, y) {
   copy_to(
-    con, markers, str_c(y, "_markers"), temporary = FALSE, overwrite = TRUE,
+    con, x, str_c(y, "_markers"), temporary = FALSE, overwrite = TRUE,
     indexes = list("cluster", "gene")
   )
 })
 
-## Prepare enrichment data.
+## Prepare Enrichment
+## ----------
 
-enriched <- list(
-	GO = "/N/project/sc_sequencing/kevin_scRNAseq/results/enrichment/go_enrichment.tsv",
-	Reactome = "/N/project/sc_sequencing/kevin_scRNAseq/results/enrichment/reactome_enrichment.tsv"
+library("clusterProfiler")
+library("ReactomePA")
+library("org.Mm.eg.db")
+
+## prepare markers for analysis.
+
+enr_markers <- map(markers, function(x) {
+  x[, change := fifelse(avg_log2FC > 0, "up", "down")]
+  x[,
+        group := str_c("cluster", cluster, change, sep = "_"),
+        by = seq_len(nrow(x))
+  ]
+
+  markers <- split(x, x[["group"]])
+  return(markers)
+})
+
+## GO analysis.
+
+go_enrichment <- map(enr_markers, function(x) {
+  go_enrichment <- map(x, function(y) {
+    enriched <- enrichGO(
+      gene = y[["gene"]], OrgDb = "org.Mm.eg.db",
+      keyType = "SYMBOL", ont = "BP"
+    )
+    enriched <- as.data.table(enriched)
+    enriched <- enriched[p.adjust < 0.05]
+    return(enriched)
+  })
+
+  go_enrichment <- rbindlist(go_enrichment, idcol = "group")
+  return(go_enrichment)
+})
+
+go_enrichment <- rbindlist(go_enrichment, idcol = "experiment")
+
+## Reactome analysis.
+
+reactome_enrichment <- map(enr_markers, function(x) {
+  enriched <- map(x, function(y) {
+    entrez <- bitr(
+      y[["gene"]], fromType = "SYMBOL", toType = "ENTREZID",
+      OrgDb = "org.Mm.eg.db"
+    )
+    entrez <- entrez[["ENTREZID"]]
+
+    enriched <- enrichPathway(gene = entrez, organism = "mouse", readable = TRUE)
+
+    enriched <- as.data.table(enriched)
+    enriched <- enriched[p.adjust < 0.05]
+    return(enriched)
+  })
+
+  enriched <- rbindlist(enriched, idcol = "group")
+  return(enriched)
+})
+
+reactome_enrichment <- rbindlist(reactome_enrichment, idcol = "experiment")
+
+## Save file of enrichment.
+
+fwrite(
+  rbindlist(list(go_enrichment, reactome_enrichment), idcol = "database"),
+  file.path("shiny_app", "enriched.tsv"),
+  sep = "\t", col.names = TRUE, row.names = FALSE, quote = FALSE
 )
 
-enriched <- map(enriched, fread, sep = "\t")
-enriched <- rbindlist(enriched, idcol = "database")
-enriched <- split(enriched, by = "experiment", keep.by = FALSE)
+## Save to database.
+
+enriched <- rbindlist(list(go_enrichment, reactome_enrichment), idcol = "database")
 
 iwalk(enriched, function(x, y) {
   copy_to(
@@ -94,10 +248,12 @@ iwalk(enriched, function(x, y) {
   )
 })
 
-## Add general data to database.
+## Sample Sheet
+## ----------
 
-# Samples.
-samples <- imap(seurat_obj, ~data.table(
+## Samples.
+
+samples <- imap(seu, ~data.table(
   experiment = .y, samples = unique(.x$orig.ident)
 ))
 samples <- rbindlist(samples)
@@ -107,3 +263,4 @@ copy_to(con, samples, "samples", temporary = FALSE, overwrite = TRUE)
 ## Turn of db connection.
 
 dbDisconnect(con)
+
