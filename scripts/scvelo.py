@@ -10,10 +10,10 @@ import pickle
 ## Variables.
 
 clusters = {
-  'KY_Mononuclear' : 'integrated_snn_res.0.4',
-  'tdT_Parental' : 'integrated_snn_res.0.4',
-  'Pax7_DTA_4day' : 'integrated_snn_res.0.5',
-  'Pax7_tdT_4day' : 'integrated_snn_res.0.5'
+  'KY_Mononuclear' : 'seurat_clusters',
+  'tdT_Parental' : 'seurat_clusters',
+  'Pax7_DTA_4day' : 'seurat_clusters',
+  'Pax7_tdT_4day' : 'seurat_clusters'
 }
 
 h5ad_files = {
@@ -60,7 +60,7 @@ for key,value in samples.items():
     scv.pl.velocity_embedding_stream(
       value, basis = 'umap', color = clusters[key],
       save = '{}.png'.format(key), title = key, show = False,
-      figsize = (10, 10), size = 50, dpi = 300
+      figsize = (8, 8), size = 25, dpi = 300, alpha = 0.5
     )
 
 ## Plot RNA velocity arrows.
@@ -106,8 +106,8 @@ scv.settings.figdir = outdir
 
 for key,value in samples.items():
     scv.pl.velocity_graph(
-      value, threshold = .2, size = 50, show = False, dpi = 300,
-      figsize = (10, 10), color = clusters[key],
+      value, threshold = .2, size = 25, show = False, dpi = 300,
+      figsize = (8, 8), color = clusters[key],
       save = '{}.png'.format(key), title = key
     )
 
@@ -123,7 +123,7 @@ for key,value in samples.items():
     scv.tl.velocity_pseudotime(value)
     scv.pl.scatter(
       value, color = 'velocity_pseudotime', cmap = 'gnuplot', dpi = 300,
-      show = False, figsize = (10, 10), title = key, size = 50,
+      show = False, figsize = (8, 8), title = key, size = 25,
       save = '{}.png'.format(key)
     )
 
@@ -143,7 +143,7 @@ for key,value in samples.items():
     scv.tl.paga(value, groups = clusters[key])
     scv.pl.paga(
       value, basis = 'umap', color = clusters[key],
-      dpi = 300, show = False, figsize = (10, 10), title = key, size = 50,
+      dpi = 300, show = False, figsize = (8, 8), title = key, size = 25,
       save = '{}.png'.format(key)
     )
 
@@ -157,12 +157,12 @@ scv.settings.figdir = outdir
 
 for key,value in samples.items():
     scv.pl.umap(
-      value, color = clusters[key], show = False, figsize = (10, 10), title = key,
-      size = 50, save = '{}.png'.format(key)
+      value, color = clusters[key], show = False, figsize = (8, 8), title = key,
+      size = 25, save = '{}.png'.format(key)
     )
     scv.pl.umap(
-      value, show = False, figsize = (10, 10), title = key,
-      size = 50, save = '{}_nocolor.png'.format(key)
+      value, show = False, figsize = (8, 8), title = key,
+      size = 25, save = '{}_nocolor.png'.format(key)
     )
 
 ## Get important genes.
@@ -177,9 +177,6 @@ for key,value in samples.items():
 for key,value in samples.items():
     df = scv.DataFrame(value.uns['rank_velocity_genes']['names'])
     df.to_csv("{}/{}.tsv".format(outdir, key), sep = '\t', header = True, index = False)
-
-for key,value in samples.items():
-    
 
 ## Save the velocities.
 
