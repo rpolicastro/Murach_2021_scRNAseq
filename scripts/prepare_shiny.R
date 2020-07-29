@@ -26,7 +26,7 @@ seurat_obj$tdT_4Day$seurat_clusters <- seurat_obj$tdT_4Day$integrated_snn_res.0.
     . == 2 ~ "Neutrophils",
     . == 3 ~ "Neutrophils",
     . == 4 ~ "Myeloid",
-    . == 5 ~ "FAPs",
+    . == 5 ~ "Tenocytes",
     . == 6 ~ "Myeloid",
     . == 7 ~ "T Cells",
     . == 8 ~ "Dead/Dying",
@@ -40,8 +40,25 @@ seurat_obj$tdT_4Day$seurat_clusters <- seurat_obj$tdT_4Day$integrated_snn_res.0.
     . == 16 ~ "Pericytes"
 )}
 
-seurat_velocity$tdT_4Day$seurat_clusters <- seurat_velocity$tdT_4Day$integrated_snn_res.0.4
 seurat_velocity$tdT_Expression$seurat_clusters <- seurat_velocity$tdT_Expression$integrated_snn_res.0.5
+seurat_velocity$tdT_4Day$seurat_clusters <- seurat_velocity$tdT_4Day$integrated_snn_res.0.4 %>% {case_when(
+    . == 1 ~ "M2 Macrophages",
+    . == 2 ~ "Myeloid",
+    . == 3 ~ "FAPs",
+    . == 4 ~ "Myeloid",
+    . == 5 ~ "Neutrophils",
+    . == 6 ~ "Neutrophils",
+    . == 7 ~ "Myeloid",
+    . == 8 ~ "T Cells",
+    . == 9 ~ "Endothelial",
+    . == 10 ~ "Myonuclei",
+    . == 11 ~ "NK Cells",
+    . == 12 ~ "Monocytes",
+    . == 13 ~ "Myeloid",
+    . == 14 ~ "Fibrogenic",
+    . == 15 ~ "Pericytes",
+    . == 16 ~ "Tenocytes"
+)}
 
 ## Make list of samples.
 
@@ -51,6 +68,10 @@ seu <- list(
   tdT_14Day_Spliced = seurat_velocity[["tdT_Expression"]],
   tdT_4Day_Spliced = seurat_velocity[["tdT_4Day"]]
 )
+
+## Save seurat object.
+
+saveRDS(seu, file.path("results", "r_objects", "seurat_complete.RDS"))
 
 ## Connect to SQLite Server
 ## ----------

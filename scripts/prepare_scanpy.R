@@ -13,13 +13,13 @@ library("SeuratDisk")
 
 ## Load seurat object.
 
-seurat_obj <- readRDS(file.path("results", "r_objects", "seurat_integrated_spliced.RDS"))
+seurat_obj <- readRDS(file.path("results", "r_objects", "seurat_complete.RDS"))
 
 seurat_obj <- list(
-  tdT_Parental = subset(seurat_obj[[1]], subset = orig.ident == "tdT_Parental"),
-  KY_Mononuclear = subset(seurat_obj[[1]], subset = orig.ident == "KY_Mononuclear"),
-  Pax7_tdT_4day = subset(seurat_obj[[2]], subset = orig.ident == "Pax7_tdT_4day"),
-  Pax7_DTA_4day = subset(seurat_obj[[2]], subset = orig.ident == "Pax7_DTA_4day")
+  tdT_Parental = subset(seurat_obj[[3]], subset = orig.ident == "tdT_Parental"),
+  KY_Mononuclear = subset(seurat_obj[[3]], subset = orig.ident == "KY_Mononuclear"),
+  Pax7_tdT_4day = subset(seurat_obj[[4]], subset = orig.ident == "Pax7_tdT_4day"),
+  Pax7_DTA_4day = subset(seurat_obj[[4]], subset = orig.ident == "Pax7_DTA_4day")
 )
 
 ## Save as H5Seurat.
