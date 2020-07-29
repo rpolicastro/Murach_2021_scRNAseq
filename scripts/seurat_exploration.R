@@ -21,6 +21,30 @@ library("future")
 
 seurat_integrated <- readRDS(file.path("results", "r_objects", "seurat_integrated.RDS"))
 
+#####################
+## Custom Clusters ##
+#####################
+
+seurat_integrated$tdT_Expression$seurat_clusters <- seurat_integrated$tdT_Expression$integrated_snn_res.0.5
+seurat_integrated$tdT_4Day$seurat_clusters <- seurat_integrated$tdT_4Day$integrated_snn_res.0.4 %>% {case_when(
+    . == 1 ~ "M2 Macrophages",
+    . == 2 ~ "Neutrophils",
+    . == 3 ~ "Neutrophils",
+    . == 4 ~ "Myeloid",
+    . == 5 ~ "Tenocytes",
+    . == 6 ~ "Myeloid",
+    . == 7 ~ "T Cells",
+    . == 8 ~ "Dead/Dying",
+    . == 9 ~ "Endothelial",
+    . == 10 ~ "Myonuclei",
+    . == 11 ~ "FAPs",
+    . == 12 ~ "NK Cells",
+    . == 13 ~ "Monocytes",
+    . == 14 ~ "Myeloid",
+    . == 15 ~ "Fibrogenic",
+    . == 16 ~ "Pericytes"
+)}
+
 ##########################
 ## tdTomato Exploration ##
 ##########################
@@ -175,10 +199,10 @@ seurat_integrated[[1]][[]] <- cbind(
 
 ## Add test info back into seurat object.
 
-seurat_integrated <- map2(seurat_integrated, row_order, function(x, y) {
-  x@meta.data <- cbind(x[[]], y)
-  return(x)
-})
+#seurat_integrated <- map2(seurat_integrated, row_order, function(x, y) {
+#  x@meta.data <- cbind(x[[]], y)
+#  return(x)
+#})
 
 ## Save expanded seurat object.
 
@@ -194,22 +218,22 @@ if (!dir.exists(file.path("results", "cell_counts"))) {
 
 ## Compare cell counts for each cluster between samples.
 
-sc_utils_obj <- sc_utils(seurat_integrated)
+sc_utils_obj <- map(seurat_integrated, sc_utils)
 
 comparisons <- list(
         c("tdT_Parental", "KY_mononuclear"),
         c("Pax7_tdT_4Day", "Pax7_DTA_4Day")
 )
 
-walk(comparisons, function(x) {
-        sc_utils_obj <- permutation_test(
-                sc_utils_obj, cluster_identity = "integrated_snn_res.0.5",
-                sample_1 = x[1], sample_2 = x[2]
+walk2(sc_utils_obj, comparisons, function(x, y) {
+        x <- permutation_test(
+                x, cluster_identity = "seurat_clusters",
+                sample_1 = y[1], sample_2 = y[2]
         )
 
-        p <- permutation_plot(sc_utils_obj, log2FD_threshold = 1)
+        p <- permutation_plot(x, log2FD_threshold = 1)
 
-        file_name <- str_c(x[1], "_vs_", x[2], ".pdf")
+        file_name <- str_c(y[1], "_vs_", y[2], ".pdf")
         pdf(file.path("results", "cell_counts", file_name), height = 3, width = 8)
         print(p); dev.off()
 })
