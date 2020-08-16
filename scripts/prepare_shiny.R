@@ -20,45 +20,78 @@ seurat_velocity <- readRDS(file.path("results/r_objects/seurat_integrated_splice
 
 ## Annotate clusters.
 
-seurat_obj$tdT_Expression$seurat_clusters <- seurat_obj$tdT_Expression$integrated_snn_res.0.5
-seurat_obj$tdT_4Day$seurat_clusters <- seurat_obj$tdT_4Day$integrated_snn_res.0.4 %>% {case_when(
-    . == 1 ~ "M2 Macrophages",
-    . == 2 ~ "Neutrophils",
-    . == 3 ~ "Neutrophils",
-    . == 4 ~ "Myeloid",
-    . == 5 ~ "Tenocytes",
-    . == 6 ~ "Myeloid",
-    . == 7 ~ "T Cells",
-    . == 8 ~ "Dead/Dying",
-    . == 9 ~ "Endothelial",
-    . == 10 ~ "Myonuclei",
-    . == 11 ~ "FAPs",
-    . == 12 ~ "NK Cells",
-    . == 13 ~ "Monocytes",
-    . == 14 ~ "Myeloid",
-    . == 15 ~ "Fibrogenic",
-    . == 16 ~ "Pericytes"
+# 14 Day Unspliced.
+seurat_obj$tdT_Expression$seurat_clusters <- seurat_obj$tdT_Expression$integrated_snn_res.0.5 %>% {case_when(
+    . == 1 ~ "FAPs",
+    . == 2 ~ "Fibroblasts",
+    . == 3 ~ "Myonuclei",
+    . == 4 ~ "FAPs",
+    . == 5 ~ "Myeloid (H2-Ab1+ H2-Eb1+)",
+    . == 6 ~ "Macrophages (Mrc1 High)",
+    . == 7 ~ "Endothelial (Pecam1+)",
+    . == 8 ~ "Satellite Cells",
+    . == 9 ~ "Myeloid",
+    . == 10 ~ "Tenocytes",
+    . == 11 ~ "Myeloid",
+    . == 12 ~ "Unknown",
+    . == 13 ~ "Cycling Cells",
+    . == 14 ~ "Smooth Muscle Cells",
+    . == 15 ~ "Satellite Cells (MyoG+)",
+    . == 16 ~ "Cycling Endothelial Cells"
 )}
+seurat_obj$tdT_Expression$seurat_clusters_merged <- str_replace(
+  seurat_obj$tdT_Expression$seurat_clusters,
+  "\\s\\(.+\\)$", ""
+)
 
-seurat_velocity$tdT_Expression$seurat_clusters <- seurat_velocity$tdT_Expression$integrated_snn_res.0.5
+# 14 Day Spliced.
+seurat_velocity$tdT_Expression$seurat_clusters <- seurat_velocity$tdT_Expression$integrated_snn_res.0.5 %>%
+{case_when(
+    . == 1 ~ "FAPs",
+    . == 2 ~ "FAPs (Tnxb High)",
+    . == 3 ~ "Myeloid (H2-Ab1+ H2-Eb1+)",
+    . == 4 ~ "Fibroblasts",
+    . == 5 ~ "Macrophages (Mrc1 High)",
+    . == 6 ~ "Endothelial Cell (Pecam1+)",
+    . == 7 ~ "Myonuclei",
+    . == 8 ~ "Satellite Cells",
+    . == 9 ~ "Tenocytes",
+    . == 10 ~ "Myeloid",
+    . == 11 ~ "Myeloid",
+    . == 12 ~ "Unknown",
+    . == 13 ~ "Cycling Cells",
+    . == 14 ~ "Satellite Cells (MyoG+)",
+    . == 15 ~ "Smooth Muscle Cells",
+    . == 16 ~ "Cycling Endothelial Cells"
+)}
+seurat_velocity$tdT_Expression$seurat_clusters_merged <- str_replace(
+  seurat_velocity$tdT_Expression$seurat_clusters,
+  "\\s\\(.+\\)$", ""
+)
+
+# 4 Day Spliced.
 seurat_velocity$tdT_4Day$seurat_clusters <- seurat_velocity$tdT_4Day$integrated_snn_res.0.4 %>% {case_when(
-    . == 1 ~ "M2 Macrophages",
-    . == 2 ~ "Myeloid",
-    . == 3 ~ "FAPs",
-    . == 4 ~ "Myeloid",
-    . == 5 ~ "Neutrophils",
-    . == 6 ~ "Neutrophils",
-    . == 7 ~ "Myeloid",
-    . == 8 ~ "T Cells",
-    . == 9 ~ "Endothelial",
-    . == 10 ~ "Myonuclei",
-    . == 11 ~ "NK Cells",
-    . == 12 ~ "Monocytes",
-    . == 13 ~ "Myeloid",
-    . == 14 ~ "Fibrogenic",
-    . == 15 ~ "Pericytes",
+    . == 1 ~ "Macrophages",
+    . == 2 ~ "Myeloid (H2-Eb1- H2-Ab1-)",
+    . == 3 ~ "FAPs (Pdgfra and Lbp High)",
+    . == 4 ~ "Myeloid (H2-Eb1+ H2-Ab1+)",
+    . == 5 ~ "Neutrophils (s100a8/9 High)",
+    . == 6 ~ "Neutrophils (s100a8/9 Low)",
+    . == 7 ~ "Myeloid (H2-Eb1+ H2-Eb1+)",
+    . == 8 ~ "B Cells (Cd74+ Ccr7+)",
+    . == 9 ~ "Endothelial (Pecam1+)",
+    . == 10 ~ "Myonuclei (Myh4+/Myh1+)",
+    . == 11 ~ "Tregs (Ms4a4b+)",
+    . == 12 ~ "Cycling Monocytes (Pclaf High)",
+    . == 13 ~ "Myeloid (Cst3 High)",
+    . == 14 ~ "Fibrogenic (Pdgfra-)",
+    . == 15 ~ "Pericytes (Rgs5+)",
     . == 16 ~ "Tenocytes"
 )}
+seurat_velocity$tdT_4Day$seurat_clusters_merged <- str_replace(
+  seurat_velocity$tdT_4Day$seurat_clusters,
+  "\\s\\(.+\\)$", ""
+)
 
 ## Make list of samples.
 
@@ -261,6 +294,7 @@ fwrite(
 ## Save to database.
 
 enriched <- rbindlist(list(go_enrichment, reactome_enrichment), idcol = "database")
+enriched <- split(enriched, by="experiment", keep.by=FALSE)
 
 iwalk(enriched, function(x, y) {
   copy_to(

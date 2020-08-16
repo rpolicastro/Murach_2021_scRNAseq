@@ -6,6 +6,7 @@ from pathlib import Path
 import scvelo as scv
 import os
 import pickle
+import cellrank as cr
 
 ## Variables.
 
@@ -45,7 +46,7 @@ for key in samples.keys():
 ## Calculate RNA velocities.
 
 for key in samples.keys():
-    scv.tl.velocity(samples[key], mode_neighbors = 'connectivities')
+    scv.tl.velocity(samples[key])
     scv.tl.velocity_graph(samples[key])
 
 ## Plot RNA velocity streams.
@@ -188,3 +189,36 @@ with open('results/py_objects/velocities.pickle', 'wb') as handle:
 with open('results/py_objects/velocities.pickle', 'rb') as handle:
     samples = pickle.load(handle)
 
+##############
+## Cellrank ##
+##############
+
+## Rerun velocity graph.
+
+for value in samples.values():
+    scv.tl.velocity_graph(value, mode_neighbors='connectivities', compute_uncertainties=True)
+
+## Identify root and final states.
+
+for key,value in samples.items():
+    cr.tl.final_states(
+      value, cluster_key=clusters[key], weight_connectivities=0.2,
+      use_velocity_uncertainty=True
+    )
+    cr.tl.root_states(value, cluster_key=clusters[key])
+
+outdir = 'results/trajectory/velocity/cellrank_states'
+if not os.path.exists(outdir):
+    os.makedirs(outdir)
+
+scv.settings.figdir = outdir
+
+for key,value in samples.items():
+    scv.pl.scatter(
+      value, color='final_states', legend_loc='right margin', size=25,
+      figsize=(8,8), show=False, save='{}_final.png'.format(key)
+    )
+    scv.pl.scatter(
+      value, color='root_states', size=25, figsize=(8,8),
+      show=False, save='{}_root.png'.format(key)
+    )

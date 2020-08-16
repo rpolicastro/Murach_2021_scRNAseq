@@ -26,24 +26,29 @@ seurat_integrated <- readRDS(file.path("results", "r_objects", "seurat_integrate
 #####################
 
 seurat_integrated$tdT_Expression$seurat_clusters <- seurat_integrated$tdT_Expression$integrated_snn_res.0.5
+
 seurat_integrated$tdT_4Day$seurat_clusters <- seurat_integrated$tdT_4Day$integrated_snn_res.0.4 %>% {case_when(
-    . == 1 ~ "M2 Macrophages",
-    . == 2 ~ "Neutrophils",
-    . == 3 ~ "Neutrophils",
-    . == 4 ~ "Myeloid",
+    . == 1 ~ "Macrophages",
+    . == 2 ~ "Neutrophils (s100a8/9+ high)",
+    . == 3 ~ "Neutrophils (s100a8/9+ low)",
+    . == 4 ~ "Myeloid (H2-Eb1+ H2-Ab1+)",
     . == 5 ~ "Tenocytes",
-    . == 6 ~ "Myeloid",
-    . == 7 ~ "T Cells",
-    . == 8 ~ "Dead/Dying",
-    . == 9 ~ "Endothelial",
-    . == 10 ~ "Myonuclei",
-    . == 11 ~ "FAPs",
-    . == 12 ~ "NK Cells",
-    . == 13 ~ "Monocytes",
-    . == 14 ~ "Myeloid",
-    . == 15 ~ "Fibrogenic",
-    . == 16 ~ "Pericytes"
+    . == 6 ~ "Myeloid (H2-Eb1- H2-Ab1-)",
+    . == 7 ~ "B Cells (Cd74+ Ccr7+)",
+    . == 8 ~ "Dead/Dying (High MT Genes)",
+    . == 9 ~ "Endothelial (Pecam1+)",
+    . == 10 ~ "Myonuclei (Myh4+/Myh1+)",
+    . == 11 ~ "FAPs (Pdgfra and Lbp High)",
+    . == 12 ~ "Tregs (Ms4a4b+)",
+    . == 13 ~ "Cycling Monocytes (Pclaf high)",
+    . == 14 ~ "Myeloid (Cst3 High)",
+    . == 15 ~ "Fibrogenic (Pdgfra-)",
+    . == 16 ~ "Pericytes (Rgs5+)"
 )}
+seurat_integrated$tdT_4Day$seurat_clusters_merged <- str_replace(
+  seurat_integrated$tdT_4Day$seurat_clusters,
+  "\\s\\(.+\\)$", ""
+)
 
 ##########################
 ## tdTomato Exploration ##
@@ -192,7 +197,7 @@ row_order <- map2(merged, seurat_integrated, function(x, y) {
   return(x)
 })
 
-seurat_integrated[[1]][[]] <- cbind(
+seurat_integrated[[1]]@meta.data <- cbind(
   seurat_integrated[[1]][[]],
   row_order[[1]]
 )
